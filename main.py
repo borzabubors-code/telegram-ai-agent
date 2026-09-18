@@ -3,6 +3,7 @@ from io import BytesIO
 
 import qrcode
 from openai import AsyncOpenAI
+
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -16,15 +17,21 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError
 
+
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
 TELEGRAM_API_ID = int(os.environ["TELEGRAM_API_ID"])
 TELEGRAM_API_HASH = os.environ["TELEGRAM_API_HASH"]
+
 TELEGRAM_SESSION = os.environ.get("TELEGRAM_SESSION", "")
+TELEGRAM_2FA_PASSWORD = os.environ.get("TELEGRAM_2FA_PASSWORD", "")
 
 
-client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+client = AsyncOpenAI(
+    api_key=OPENAI_API_KEY
+)
+
 
 user_client = TelegramClient(
     StringSession(TELEGRAM_SESSION),
@@ -44,13 +51,17 @@ Javoblarni qisqa, tushunarli va foydali qil.
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Assalomu alaykum! 👋\n"
+        "Assalomu alaykum! 👋\n\n"
         "Men AI yordamchiman.\n\n"
-        "Shaxsiy Telegram akkauntingizni ulash uchun /connect buyrug'ini yuboring."
+        "Shaxsiy Telegram akkauntingizni ulash uchun "
+        "/connect buyrug'ini yuboring."
     )
 
 
-async def connect_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def connect_telegram(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
     try:
         if not user_client.is_connected():
             await user_client.connect()
@@ -64,6 +75,7 @@ async def connect_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE):
         qr_login = await user_client.qr_login()
 
         qr_image = qrcode.make(qr_login.url)
+
         image_bytes = BytesIO()
         qr_image.save(image_bytes, format="PNG")
         image_bytes.seek(0)
@@ -81,15 +93,20 @@ async def connect_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         try:
-    await qr_login.wait()
-except SessionPasswordNeededError:
-    password = os.environ.get("TELEGRAM_2FA_PASSWORD", "")
-    if not password:
-        await update.message.reply_text(
-            "🔐 Telegram 2FA paroli Railway Variables'da kiritilmagan."
-        )
-        return
-    await user_client.sign_in(password=password)
+            await qr_login.wait()
+
+        except SessionPasswordNeededError:
+
+            if not TELEGRAM_2FA_PASSWORD:
+                await update.message.reply_text(
+                    "🔐 Telegram 2FA paroli Railway Variables'da "
+                    "kiritilmagan."
+                )
+                return
+
+            await user_client.sign_in(
+                password=TELEGRAM_2FA_PASSWORD
+            )
 
         session_string = user_client.session.save()
 
@@ -100,19 +117,26 @@ except SessionPasswordNeededError:
 
         await update.message.reply_text(
             "✅ Telegram akkauntingiz muvaffaqiyatli ulandi!\n\n"
-            "Endi Railway'ga session ma'lumotini saqlash kerak."
+            "Railway loglarida TELEGRAM_SESSION paydo bo'ldi."
         )
 
     except Exception as e:
         print(f"CONNECT ERROR: {e}")
+
         await update.message.reply_text(
-            "❌ Ulanishda xatolik yuz berdi.\n"
+            "❌ Ulanishda xatolik yuz berdi.\n\n"
             "Railway loglarini tekshirish kerak."
         )
 
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
+async def handle_message(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    if not update.message:
+        return
+
+    if not update.message.text:
         return
 
     user_text = update.message.text
@@ -130,6 +154,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"ERROR: {e}")
+
         await update.message.reply_text(
             "Kechirasiz, hozir texnik xatolik yuz berdi. "
             "Birozdan keyin qayta urinib ko'ring."
@@ -137,14 +162,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
+
     application = (
         Application.builder()
         .token(TELEGRAM_BOT_TOKEN)
         .build()
     )
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("connect", connect_telegram))
+    application.add_handler(
+        CommandHandler("start", start)
+    )
+
+    application.add_handler(
+        CommandHandler("connect", connect_telegram)
+    )
 
     application.add_handler(
         MessageHandler(
