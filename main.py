@@ -25,6 +25,7 @@ TELEGRAM_API_ID = int(os.environ["TELEGRAM_API_ID"])
 TELEGRAM_API_HASH = os.environ["TELEGRAM_API_HASH"]
 
 TELEGRAM_SESSION = os.environ.get("TELEGRAM_SESSION", "")
+TELEGRAM_2FA_PASSWORD = os.environ.get("TELEGRAM_2FA_PASSWORD", "")
 
 
 openai_client = AsyncOpenAI(
@@ -62,8 +63,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Assalomu alaykum! 👋\n\n"
         "Men AI yordamchiman.\n\n"
-        "Shaxsiy Telegram akkauntini ulash uchun "
-        "/connect buyrug'ini yuboring."
+        "/connect — shaxsiy Telegram akkauntini ulash"
     )
 
 
@@ -76,8 +76,13 @@ async def connect_telegram(
             await user_client.connect()
 
         if await user_client.is_user_authorized():
+            user_client.add_event_handler(
+                handle_personal_message,
+                events.NewMessage(incoming=True)
+            )
+
             await update.message.reply_text(
-                "✅ Shaxsiy Telegram akkauntingiz allaqachon ulangan."
+                "✅ Shaxsiy Telegram akkauntingiz ulangan!"
             )
             return
 
@@ -92,12 +97,12 @@ async def connect_telegram(
         await update.message.reply_photo(
             photo=image_bytes,
             caption=(
-                "📱 Telegram akkauntingizni ulash uchun:\n\n"
+                "📱 Telegram akkauntingizni ulash:\n\n"
                 "1. Telegram → Settings\n"
                 "2. Devices\n"
                 "3. Link Desktop Device\n"
-                "4. QR kodni skanerlang.\n\n"
-                "QR kod skanerlangandan keyin kuting..."
+                "4. Shu QR kodni skanerlang.\n\n"
+                "Skanerlagandan keyin kuting..."
             ),
         )
 
@@ -105,20 +110,29 @@ async def connect_telegram(
             await qr_login.wait()
 
         except SessionPasswordNeededError:
-            await update.message.reply_text(
-                "🔐 Telegram 2 bosqichli himoya parolini talab qilmoqda. "
-                "Hozir mavjud saqlangan sessiya bilan ulanish kerak."
+
+            if not TELEGRAM_2FA_PASSWORD:
+                await update.message.reply_text(
+                    "❌ Telegram 2FA paroli topilmadi."
+                )
+                return
+
+            await user_client.sign_in(
+                password=TELEGRAM_2FA_PASSWORD
             )
-            return
 
-        user_client.add_event_handler(
-            handle_personal_message,
-            events.NewMessage(incoming=True)
-        )
+        if await user_client.is_user_authorized():
 
-        await update.message.reply_text(
-            "✅ Telegram akkauntingiz muvaffaqiyatli ulandi!"
-        )
+            user_client.add_event_handler(
+                handle_personal_message,
+                events.NewMessage(incoming=True)
+            )
+
+            await update.message.reply_text(
+                "✅ Telegram akkauntingiz muvaffaqiyatli ulandi!\n\n"
+                "Endi shaxsiy Telegram akkauntingizga yozilgan "
+                "xabarlarni AI o'qib javob beradi."
+            )
 
     except Exception as e:
         print(f"CONNECT ERROR: {e}")
@@ -138,10 +152,8 @@ async def handle_bot_message(
     if not update.message.text:
         return
 
-    user_text = update.message.text
-
     try:
-        answer = await ask_ai(user_text)
+        answer = await ask_ai(update.message.text)
 
         await update.message.reply_text(answer)
 
@@ -149,17 +161,15 @@ async def handle_bot_message(
         print(f"BOT ERROR: {e}")
 
         await update.message.reply_text(
-            "Kechirasiz, hozir texnik xatolik yuz berdi."
+            "Kechirasiz, texnik xatolik yuz berdi."
         )
 
 
 async def handle_personal_message(event):
     try:
-        # Faqat shaxsiy chatlar
         if not event.is_private:
             return
 
-        # O'zimiz yuborgan xabarlarni e'tiborsiz qoldiramiz
         if event.out:
             return
 
@@ -168,13 +178,13 @@ async def handle_personal_message(event):
         if not text:
             return
 
-        print("📩 Shaxsiy Telegram xabari keldi")
+        print("📩 Personal Telegram xabari keldi")
 
         answer = await ask_ai(text)
 
         await event.respond(answer)
 
-        print("✅ AI javob yubordi")
+        print("✅ Personal Telegram javobi yuborildi")
 
     except Exception as e:
         print(f"PERSONAL TELEGRAM ERROR: {e}")
