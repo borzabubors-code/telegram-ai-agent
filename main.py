@@ -14,7 +14,7 @@ from telegram.ext import (
 
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-
+from telethon.errors import SessionPasswordNeededError
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
@@ -80,7 +80,16 @@ async def connect_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ),
         )
 
-        await qr_login.wait()
+        try:
+    await qr_login.wait()
+except SessionPasswordNeededError:
+    password = os.environ.get("TELEGRAM_2FA_PASSWORD", "")
+    if not password:
+        await update.message.reply_text(
+            "🔐 Telegram 2FA paroli Railway Variables'da kiritilmagan."
+        )
+        return
+    await user_client.sign_in(password=password)
 
         session_string = user_client.session.save()
 
